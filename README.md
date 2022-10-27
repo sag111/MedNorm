@@ -1,18 +1,25 @@
-# Python файлы для pipeline NER + Normalization
+# MedNorm
 
-## Как все работает?
-В train.py закладываются файлы с тренировочными данными в особом sagnlpjson формате, который был введен Артемом (не было времени переписывать скрипты под обычный sagnlp, под обычный sagnlp работает только Demo.ipynb) - sagnlp_v2, в особом формате sagnlp_v2 вместо поля  entities типа dict с объектами ent идет list доступный по адресу ['objects']['MedEntity'] с теми же самыми объектами ent, за исключением того что в MedDRA у ent из sagnlp_v2 идет не PT code, а PT фраза. Опционально также подаются тестировочные и валидационные множества. Если подается тестировочное множество, то в конце будет **тест**. В train.py в параметре --meddra_path идет путь до файла meddra, он нужен для векторизатора концептов. В -res путь до сохраненной модели после обучения и сохраненного векторизатора концептов с его вложжениями концептов. В --transformer_model_path указывается путь до модели трансформера. В -load_model идет путь до предобученной модели с сохраненным векторизатором концептов. Все аргументы объяснены в train.py в полях description, кроме use_cuda и use_conceptless - ну, это вы сами знаете, для чего<br><br>
-Если подается валидационный файл, то сразу подключается early_stopping с patiens 7 epochs. Валидация без concepless, как и обучение<br><br>
-Если подается тестовый файл, то в конце расситывается точность на голд NER. Флаг `--use_conceptless` контролирует рассчет на тесте с concept_less и без. По умоланию без concepless.<br><br>
-В `res_dir` подается папка, куда будет сохранена
-- Модель CADEC_SoTa
-- Векторизатор
-- Вложения векторизатора
-<br><br>
-В `-model` подается путь до модели трансформера, которая будет учиться в сетке. Однако, если вы хотите запустить уже предобученную нормализационную модель CADEC_SoTa, то используйте `--load_model` с путью до папки с файлами, описанными выше.<br> 
-## Основные файлы
-1. train.py. Пример запуска: `python train.py -tr ./Demo/data/demo.json -val ./Demo/data/demo.json -ts ./Demo/data/demo.json -load_pretrained ./Model_weights/rubert_11072022_test -res ./Demo/saved_model_dir/ --use_cuda`
-2. predict.py. Пример запуска: `python predict.py -p ./Demo/data/demo.json -res ./Demo/data/demo_with_predicted_meddra_ents.json -model ./Demo/saved_model_dir/`
-3. norm_eval.py. Пример запуска: `python -t ./Demo/data/demo.json -p ./Demo/data/demo_with_predicted_meddra_ents.json`
-## Разбивка на фолды
-Скрипт create_splits.py. Без аргументов. Сплитит файлы из ./Data/Full_corps/ - RDRS, CADEC. На 5 фолдов, фолды сохраняются в ./Data/RDRS_splits и ./Data/CADEC_splits вместе с id отзывов фолдов. 
+This repository contains the neural network model code for linking phrases to their concepts in the dictionary. This model was used to link mentions of side effects of drugs from online reviews with the corresponding terms in the MedDRA dictionary, in the PT part (preffered terms). Also it contains a corpus of russian internet reviews with normalization markup: phrase from review and it's concept. Model weights for russian model can be found at [huggingface repo](https://huggingface.co/sagteam/rubert-base-cased-mcn), also the demonstration of the trained model can be found in `Demo.ipynb`: data loading and evaluating on the test set.
+
+## Usage
+At first, you should download [Anaconda](https://www.anaconda.com/products/distribution) and create a virtual env and activate it:
+```
+conda env create -f env.yml
+conda activate normalization
+```
+### Train and test
+To train model use `train.py` with this args:
+ - -tr - train data path in a simple json format. This format is a list of reviews (python dicts), each review has nested fields: `['objects']['MedEntity']`, in `MedEntity` there is a list of entities which has `text` field and `MedDRA` field, which contain the text of the phrase and the PT phrase of the medDRA dictionary, respectively.
+ - -res - result path, where model will be saved, with concept vectors and ConceptVectorizer object, which helps computing embeddings for dictionary
+ - -args - Path to the configuration file, which have lr, epochs, batch size, use_cuda flag, **default:** `train_args.txt`
+ - -model - Path to the initial transformer model, listed in https://huggingface.co/, which will be fine-tuned. **default:** `DeepPavlov/rubert-base-cased`
+ - -dict - MedDRA (or another dictionary) in .asc format, .asc format is code and term separated by '$'
+ - -val - Path to the validation data in sumilar to `-tr` json format. Validation data is used for early stopping and computing metrics. Whithout validation data no early stopping is used.
+ - -load_pretrained - Path to already trained model from this repo for futher finetuning (training) with ConceptVectorizer and concept embeddings. When you define this param, you dont need to provide "transformer_model_path".
+ - -ts - Path to the test data file in similar to `-tr` json format to evaluate after training.
+ - -use_concept_less - If this flag is specified, then during the test all phrases that have an empty MedDRA field are replaced with the conceptless label, the model tries to determine by the threshold whether the phrase has a concept in the dictionary or not.
+ - --use_cuda - If this flag is specified, gpu is used
+
+### Demonstration and RDRS corpus
+A demo on the RDRS drug review dataset is included in the `Demo.ipynb`. The demo case is presented in a simple .csv format with fields mention,tag,pt code,fold id. Tag is a type of mention: adverse drug reaction or indication of the disease. Fold id sets dataset split on 5 parts.
